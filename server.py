@@ -9,6 +9,7 @@ import os
 import time
 import threading
 import webbrowser
+import rpisec
 
 try:
     import cStringIO as io
@@ -24,7 +25,6 @@ ROOT = os.path.normpath(os.path.dirname(__file__))
 with open(os.path.join(ROOT, "password.txt")) as in_file:
     PASSWORD = in_file.read().strip()
 COOKIE_NAME = "camp"
-
 
 class IndexHandler(tornado.web.RequestHandler):
 
@@ -42,13 +42,17 @@ class LoginHandler(tornado.web.RequestHandler):
 
     def post(self):
         password = self.get_argument("password", "")
-        if hashlib.sha512(password).hexdigest() == PASSWORD:
+        if hashlib.sha512(password + rpisec.SALT).hexdigest() == PASSWORD:
             self.set_secure_cookie(COOKIE_NAME, str(time.time()))
             self.redirect("/")
         else:
             time.sleep(1)
             self.redirect(u"/login?error")
 
+class LogoutHandler(tornado.web.RequestHandler):
+    def get(self):
+        self.clear_cookie(COOKIE_NAME)
+        self.redirect("/login")
 
 class WebSocket(tornado.websocket.WebSocketHandler):
 
@@ -100,6 +104,9 @@ if args.use_usb:
 else:
     import picamera
     camera = picamera.PiCamera()
+# using Raspberry Pi Camera Mount.
+    camera.hflip = True
+    camera.vflip = True
     camera.start_preview()
 
 resolutions = {"high": (1280, 720), "medium": (640, 480), "low": (320, 240)}
@@ -115,10 +122,13 @@ else:
 
 handlers = [(r"/", IndexHandler), (r"/login", LoginHandler),
             (r"/websocket", WebSocket),
-            (r'/static/(.*)', tornado.web.StaticFileHandler, {'path': ROOT})]
+            (r'/static/(.*)', tornado.web.StaticFileHandler, {'path': ROOT}),
+            (r'/logout',LogoutHandler)
+        ]
 application = tornado.web.Application(handlers, cookie_secret=PASSWORD)
 application.listen(args.port)
 
 webbrowser.open("http://localhost:%d/" % args.port, new=2)
 
 tornado.ioloop.IOLoop.instance().start()
+
